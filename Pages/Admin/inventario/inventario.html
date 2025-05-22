@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventario Global con Exportación e Importación</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    /* (estilos iguales, sin cambios) */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+
+    h2, h3 {
+      color: #2c3e50;
+    }
+
+    label {
+      margin-top: 15px;
+      font-weight: bold;
+      display: block;
+    }
+
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-sizing: border-box;
+      transition: border 0.3s;
+    }
+
+    select:focus, input:focus {
+      border-color: #2980b9;
+      outline: none;
+    }
+
+    button {
+      background-color: #2980b9;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      margin-top: 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #1c5d86;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+      margin-top: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    th, td {
+      border: 1px solid #e0e0e0;
+      padding: 12px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #3498db;
+      color: white;
+      font-weight: bold;
+    }
+
+    td button {
+      background-color: transparent;
+      color: #e74c3c;
+      font-size: 18px;
+      padding: 4px 8px;
+    }
+
+    .export-buttons {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .export-buttons button {
+      flex: 1 1 200px;
+      background-color: #27ae60;
+    }
+
+    .export-buttons button:hover {
+      background-color: #1e874b;
+    }
+
+    .flex-row {
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .flex-row > input {
+      flex: 1 1 200px;
+    }
+
+    @media (max-width: 600px) {
+      .flex-row {
+        flex-direction: column;
+      }
+
+      .export-buttons {
+        flex-direction: column;
+      }
+
+      .export-buttons button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Gestión de Inventario</h2>
+
+  <label for="categoria">Selecciona Categoría:</label>
+  <select id="categoria" onchange="mostrarProductos()">
+    <option value="">-- Todas las Categorías (para búsqueda global) --</option>
+    <option value="lavamanos">Lavamanos</option>
+    <option value="muebles">Muebles</option>
+    <option value="sanitarios">Sanitarios</option>
+    <option value="grifos">Grifos</option>
+    <option value="accesorios">Accesorios</option>
+  </select>
+
+  <label for="buscar">Buscar (global en todas las categorías):</label>
+  <input type="text" id="buscar" oninput="filtrarProductos()" placeholder="Buscar por nombre..." />
+
+  <h3>Agregar Producto</h3>
+  <div class="flex-row">
+    <input type="text" id="codigo" placeholder="Código" />
+    <input type="text" id="nombre" placeholder="Nombre" />
+    <input type="number" id="precio" placeholder="Precio" min="0" step="0.01" />
+    <input type="number" id="cantidad" placeholder="Cantidad" min="0" step="1" />
+  </div>
+  <button onclick="agregarProducto()">Agregar Producto</button>
+
+  <h3>Inventario</h3>
+  <table id="tablaProductos">
+    <thead>
+      <tr>
+        <th>Categoría</th>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>Precio</th>
+        <th>Cantidad</th>
+        <th>Eliminar</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="export-buttons">
+    <button onclick="exportar('pdf')">Exportar PDF Categoría</button>
+    <button onclick="exportar('excel')">Exportar Excel Categoría</button>
+    <button onclick="exportar('pdf', true)">Exportar PDF Todo Inventario</button>
+    <button onclick="exportar('excel', true)">Exportar Excel Todo Inventario</button>
+  </div>
+
+  <!-- Botón para importar Excel -->
+  <div style="margin-top: 20px;">
+    <label for="importarArchivo"><strong>Importar Excel (Formato: Categoría, Código, Nombre, Precio, Cantidad)</strong></label>
+    <input type="file" id="importarArchivo" accept=".xlsx, .xls" />
+    <button onclick="importarExcel()">Importar Excel</button>
+  </div>
+
+<script>
+  const categorias = ["lavamanos", "muebles", "sanitarios", "grifos", "accesorios"];
+
+  function obtenerCategoria() {
+    return document.getElementById("categoria").value.toLowerCase();
+  }
+
+  function mostrarProductos(filtrados = null) {
+    const tbody = document.querySelector("#tablaProductos tbody");
+    tbody.innerHTML = "";
+
+    let productosAMostrar = [];
+
+    if (filtrados) {
+      productosAMostrar = filtrados;
+    } else {
+      const categoria = obtenerCategoria();
+      if (categoria) {
+        productosAMostrar = JSON.parse(localStorage.getItem(categoria)) || [];
+        productosAMostrar = productosAMostrar.map(p => ({ ...p, categoria }));
+      } else {
+        // Mostrar todo inventario (para categoría vacía)
+        productosAMostrar = [];
+        for (let cat of categorias) {
+          let prods = JSON.parse(localStorage.getItem(cat)) || [];
+          prods = prods.map(p => ({ ...p, categoria: cat }));
+          productosAMostrar = productosAMostrar.concat(prods);
+        }
+      }
+    }
+
+    productosAMostrar.forEach((prod) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${prod.categoria}</td>
+        <td>${prod.codigo}</td>
+        <td>${prod.nombre}</td>
+        <td>${prod.precio}</td>
+        <td>${prod.cantidad}</td>
+        <td>
+          <button onclick="eliminarProductoPorCodigo('${prod.codigo}')">🗑</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function eliminarProductoPorCodigo(codigo) {
+    for (let cat of categorias) {
+      let productos = JSON.parse(localStorage.getItem(cat)) || [];
+      const index = productos.findIndex(p => p.codigo === codigo);
+      if (index > -1) {
+        productos.splice(index, 1);
+        localStorage.setItem(cat, JSON.stringify(productos));
+        break;
+      }
+    }
+    filtrarProductos();
+  }
+
+  function agregarProducto() {
+    const categoria = obtenerCategoria();
+    const codigo = document.getElementById("codigo").value.trim();
+    const nombre = document.getElementById("nombre").value.trim();
+    const precio = parseFloat(document.getElementById("precio").value);
+    const cantidad = parseInt(document.getElementById("cantidad").value);
+
+    if (!categoria) {
+      alert("Selecciona una categoría para agregar producto.");
+      return;
+    }
+    if (!codigo || !nombre || isNaN(precio) || isNaN(cantidad)) {
+      alert("Todos los campos son obligatorios y deben ser válidos.");
+      return;
+    }
+
+    const productos = JSON.parse(localStorage.getItem(categoria)) || [];
+    if (productos.find(p => p.codigo === codigo)) {
+      alert("Ya existe un producto con ese código en esta categoría.");
+      return;
+    }
+
+    productos.push({ codigo, nombre, precio, cantidad });
+    localStorage.setItem(categoria, JSON.stringify(productos));
+
+    // Limpiar inputs
+    document.getElementById("codigo").value = "";
+    document.getElementById("nombre").value = "";
+    document.getElementById("precio").value = "";
+    document.getElementById("cantidad").value = "";
+
+    mostrarProductos();
+  }
+
+  function filtrarProductos() {
+    const texto = document.getElementById("buscar").value.toLowerCase();
+
+    let todosLosProductos = [];
+    for (let cat of categorias) {
+      let productos = JSON.parse(localStorage.getItem(cat)) || [];
+      productos = productos.map(p => ({ ...p, categoria: cat }));
+      todosLosProductos = todosLosProductos.concat(productos);
+    }
+
+    const filtrados = todosLosProductos.filter(p => p.nombre.toLowerCase().includes(texto));
+
+    mostrarProductos(filtrados);
+  }
+
+  function exportar(tipo, todo = false) {
+    let datos = [];
+
+    if (todo) {
+      for (let cat of categorias) {
+        let productos = JSON.parse(localStorage.getItem(cat)) || [];
+        productos.forEach(p => {
+          datos.push({
+            Categoría: cat,
+            Código: p.codigo,
+            Nombre: p.nombre,
+            Precio: p.precio,
+            Cantidad: p.cantidad,
+          });
+        });
+      }
+      if (datos.length === 0) return alert("No hay productos en el inventario para exportar.");
+    } else {
+      const categoria = obtenerCategoria();
+      if (!categoria) return alert("Selecciona una categoría para exportar.");
+      let productos = JSON.parse(localStorage.getItem(categoria)) || [];
+      if (productos.length === 0) return alert("No hay productos en esta categoría para exportar.");
+      datos = productos.map(p => ({
+        Código: p.codigo,
+        Nombre: p.nombre,
+        Precio: p.precio,
+        Cantidad: p.cantidad,
+      }));
+    }
+
+    if (tipo === "pdf") {
+      exportarPDF(datos, todo ? "Inventario Completo" : `Inventario - ${obtenerCategoria()}`);
+    } else if (tipo === "excel") {
+      exportarExcel(datos, todo ? "inventario_completo" : `inventario_${obtenerCategoria()}`);
+    }
+  }
+
+  function exportarPDF(datos, titulo) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(titulo, 14, 20);
+    doc.autoTable({
+      startY: 25,
+      head: [Object.keys(datos[0])],
+      body: datos.map(Object.values),
+    });
+    doc.save(titulo.toLowerCase().replace(/\s+/g, "_") + ".pdf");
+  }
+
+  function exportarExcel(datos, nombreArchivo) {
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+    XLSX.writeFile(wb, nombreArchivo + ".xlsx");
+  }
+
+  // FUNCION IMPORTAR EXCEL
+  function importarExcel() {
+    const archivoInput = document.getElementById("importarArchivo");
+    if (archivoInput.files.length === 0) {
+      alert("Por favor, selecciona un archivo Excel para importar.");
+      return;
+    }
+
+    const archivo = archivoInput.files[0];
+    const lector = new FileReader();
+
+    lector.onload = (e) => {
+      const datos = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(datos, { type: "array" });
+
+      // Suponemos que la información está en la primera hoja
+      const primeraHojaNombre = workbook.SheetNames[0];
+      const hoja = workbook.Sheets[primeraHojaNombre];
+
+      // Convertir hoja a JSON
+      const jsonDatos = XLSX.utils.sheet_to_json(hoja, { defval: "" });
+
+      // Validar formato esperado
+      // Se espera que el archivo tenga columnas: Categoría, Código, Nombre, Precio, Cantidad
+      if (jsonDatos.length === 0) {
+        alert("El archivo Excel está vacío o no tiene datos válidos.");
+        return;
+      }
+
+      // Validar campos y guardar por categoría
+      let contador = 0;
+      jsonDatos.forEach(fila => {
+        const cat = (fila.Categoría || fila.categoria || fila.category || "").toString().toLowerCase().trim();
+        const cod = (fila.Código || fila.codigo || fila.code || "").toString().trim();
+        const nom = (fila.Nombre || fila.nombre || fila.name || "").toString().trim();
+        const pre = parseFloat(fila.Precio || fila.precio || fila.price || 0);
+        const can = parseInt(fila.Cantidad || fila.cantidad || fila.amount || 0);
+
+        if (!categorias.includes(cat)) {
+          console.warn(`Categoría inválida: ${cat}, fila ignorada.`);
+          return; // ignorar fila con categoría inválida
+        }
+        if (!cod || !nom || isNaN(pre) || isNaN(can)) {
+          console.warn(`Fila con datos incompletos o inválidos, ignorada.`);
+          return;
+        }
+
+        // Recuperar productos existentes y agregar o actualizar
+        let productos = JSON.parse(localStorage.getItem(cat)) || [];
+
+        // Verificar si código ya existe para actualizar
+        let index = productos.findIndex(p => p.codigo === cod);
+        if (index > -1) {
+          productos[index] = { codigo: cod, nombre: nom, precio: pre, cantidad: can };
+        } else {
+          productos.push({ codigo: cod, nombre: nom, precio: pre, cantidad: can });
+        }
+        localStorage.setItem(cat, JSON.stringify(productos));
+        contador++;
+      });
+
+      alert(`Importación finalizada. Productos agregados o actualizados: ${contador}`);
+      archivoInput.value = ""; // Limpiar input
+      mostrarProductos();
+    };
+
+    lector.readAsArrayBuffer(archivo);
+  }
+
+  // Mostrar inicialmente todo el inventario
+  mostrarProductos();
+
+</script>
+</body>
+</html>
